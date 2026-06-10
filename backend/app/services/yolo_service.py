@@ -13,17 +13,21 @@ from typing import List, Tuple
 # ── Asegurar que pipeline.* sea importable ───────────────────────────────────
 # En producción (Docker) el pipeline se copia en /app/pipeline.
 # En desarrollo local apuntamos al directorio raíz del proyecto.
-_PIPELINE_CANDIDATES = [
-    Path("/app"),                                                        # Docker
-    Path(__file__).resolve().parents[4],                                 # …/backend/../../../ → raíz proyecto
-    Path(__file__).resolve().parents[3],                                 # fallback
-]
-for _candidate in _PIPELINE_CANDIDATES:
-    if (_candidate / "pipeline").is_dir():
-        _root = str(_candidate)
-        if _root not in sys.path:
-            sys.path.insert(0, _root)
-        break
+def _find_pipeline_root() -> Path:
+    """Busca el directorio que contiene pipeline/ — funciona en Docker y dev local."""
+    # En Docker: /app/pipeline existe directamente
+    if (Path("/app") / "pipeline").is_dir():
+        return Path("/app")
+    # En dev local: subir desde este archivo hasta encontrar pipeline/
+    current = Path(__file__).resolve()
+    for parent in current.parents:
+        if (parent / "pipeline").is_dir():
+            return parent
+    return Path(__file__).resolve().parent  # fallback
+
+_pipeline_root = str(_find_pipeline_root())
+if _pipeline_root not in sys.path:
+    sys.path.insert(0, _pipeline_root)
 
 from pipeline.tiler    import generate_tiles                             # noqa: E402
 from pipeline.detector import (                                          # noqa: E402
