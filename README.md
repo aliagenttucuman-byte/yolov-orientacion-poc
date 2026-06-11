@@ -1,33 +1,58 @@
-# YOLOv Orientación PoC
+# YOLOv Orientación PoC — ForestAI Tree Detection
 
-> Comparativa experimental para determinar la mejor configuración de YOLO
-> aplicada a detección de copas de árboles en ortofotos aéreas (ForestAI).
+> PoC de detección de copas de árboles en ortofotos aéreas (drones).
+> Compara modelos YOLO fine-tuned vs detección clásica ExG+Watershed.
 
 Repo: https://github.com/aliagenttucuman-byte/yolov-orientacion-poc
 
----
-
-## Flujo completo
-
-```
-GeoTIFF (ortofoto)
-      │
-      ▼
- [tiler.py]          tiles 1024px con overlap 128px + ExG filter
-      │
-      ▼
- [detector.py]       YOLO inference por tile → bboxes locales
-      │
-      ▼
- [NMS global]        elimina duplicados de tiles solapados
-      │
-      ▼
- [reporter.py]       métricas, comparativa, plots, JSON
-```
-
-El mismo pipeline corre para **yolov8n / yolo11n / yolov9c** en paralelo.
+Demo: http://100.110.8.13:9020 (Tailscale ai-server)
 
 ---
+
+## Resultado calibrado (demo ReforestLatam)
+
+| Parámetro | Valor |
+|-----------|-------|
+| Modelo | yolo11n_forestai (fine-tuned NOA/Tucumán) |
+| Conf | 0.65 |
+| Tile size | 640px |
+| Overlap | 128px |
+| Centroid NMS | 90px |
+| **Resultado** | **~275 árboles — 9 de Julio ortofoto** |
+
+---
+
+## Detectores disponibles
+
+| Modelo | Descripción |
+|--------|-------------|
+| `yolo11n_forestai` | Fine-tuned sobre ortofotos NOA/Tucumán. **Recomendado para demo.** |
+| `yolo11n` | YOLO11n base (no fine-tuned) |
+| `yolov8n` | YOLOv8n base |
+| `exg` | ExG + Watershed — sin ML, detecta vegetación por índice de color verde |
+
+---
+
+## Flujo pipeline
+
+```
+GeoTIFF (ortofoto RGB)
+      │
+      ▼
+ [tiler.py]          tiles 640/1024px con overlap 128px
+      │
+      ▼
+ [detector.py]       YOLO inference por tile  ──OR──  [exg_detector.py] ExG+Watershed
+      │
+      ▼
+ [NMS global]        elimina duplicados de tiles solapados (centroid_dist_px)
+      │
+      ▼
+ [FastAPI :8020]     sirve resultados a la UI React
+```
+
+---
+
 
 ## Setup rápido
 
