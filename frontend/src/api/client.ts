@@ -83,3 +83,39 @@ export async function compareModels(
 export function tileUrl(job_id: string, filename: string): string {
   return `${BASE}/tiles/${job_id}/${filename}`
 }
+
+export interface ClassifyRequest {
+  job_id: string
+  sample_tiles?: number
+  max_crops_per_tile?: number
+  concurrency?: number
+}
+
+export interface SpeciesSummary {
+  species: string
+  count: number
+  pct: number
+  avg_confidence: number
+  health_saludable: number
+  health_estresado: number
+  health_enfermo: number
+}
+
+export interface ClassifyResponse {
+  job_id: string
+  total_trees: number
+  classified_trees: number
+  n_clusters: number
+  tiles_sampled: number
+  elapsed_sec: number
+  species_summary: SpeciesSummary[]
+}
+
+export async function classifySpecies(req: ClassifyRequest): Promise<ClassifyResponse> {
+  const res = await fetch(`${BASE}/classify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  })
+  return handleResponse<ClassifyResponse>(res)
+}

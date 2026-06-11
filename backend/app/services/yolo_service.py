@@ -33,12 +33,17 @@ from pipeline.tiler    import generate_tiles                             # noqa:
 from pipeline.detector import (                                          # noqa: E402
     load_model, run_inference, nms_global, SUPPORTED_MODELS,
 )
+from pipeline.exg_detector import run_exg_inference                      # noqa: E402
 
 # ── Configuración ────────────────────────────────────────────────────────────
 UPLOAD_DIR  = Path(os.getenv("UPLOAD_DIR", "/tmp/yolov-uploads"))
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-VALID_MODELS: List[str] = list(SUPPORTED_MODELS.keys())
+VALID_MODELS: List[str] = list(SUPPORTED_MODELS.keys()) + ["exg"]
+
+# ── Cache en memoria de resultados por job ────────────────────────────────────
+# Permite que /classify acceda a las detecciones del último /process sin re-correr YOLO.
+_job_results: dict = {}  # job_id → dict con detecciones raw
 
 
 # ── Funciones públicas ───────────────────────────────────────────────────────
@@ -51,8 +56,10 @@ def run_pipeline(
     job_id:     str,
     file_path:  str,
     model_key:  str  = "yolo11n",
-    conf:       float = 0.25,
+    conf:       float = 0.30,
     iou:        float = 0.45,
+    nms_iou:    float = 0.40,
+    centroid_dist_px: int = 40,
     tile_size:  int  = 1024,
     overlap:    int  = 128,
 ) -> dict:
@@ -76,27 +83,36 @@ def run_pipeline(
         overlap    = overlap,
     )
 
-    # 2. Carga de modelo
-    model = load_model(model_key)
+    # 2-3. Inferencia — YOLO o ExG
+    if model_key == "exg":
+        detections_raw, elapsed = run_exg_inference(
+            tiles     = tiles_meta,
+            tiles_dir = tiles_dir,
+        )
+        # ExG ya viene sin duplicados por tile — solo NMS global
+        detections = nms_global(detections_raw, iou_threshold=nms_iou, centroid_dist_px=centroid_dist_px)
+    else:
+        # 2. Carga de modelo
+        model = load_model(model_key)
 
-    # 3. Inferencia
-    detections_raw, elapsed = run_inference(
-        model     = model,
-        tiles     = tiles_meta,
-        tiles_dir = tiles_dir,
-        conf      = conf,
-        iou       = iou,
-    )
+        # 3. Inferencia
+        detections_raw, elapsed = run_inference(
+            model     = model,
+            tiles     = tiles_meta,
+            tiles_dir = tiles_dir,
+            conf      = conf,
+            iou       = iou,
+        )
 
-    # 4. NMS global (eliminar duplicados en solapamientos)
-    detections = nms_global(detections_raw, iou_threshold=iou)
+        # 4. NMS global (eliminar duplicados en solapamientos)
+        detections = nms_global(detections_raw, iou_threshold=nms_iou, centroid_dist_px=centroid_dist_px)
 
     # 5. Calcular estadísticas
     tiles_processed = len(tiles_meta)
     tiles_with_dets = len({d["tile_filename"] for d in detections})
     tiles_per_sec   = round(tiles_processed / elapsed, 2) if elapsed > 0 else 0.0
 
-    return {
+    result = {
         "job_id":                 job_id,
         "model_key":              model_key,
         "tree_count":             len(detections),
@@ -106,14 +122,18 @@ def run_pipeline(
         "tiles_per_sec":          tiles_per_sec,
         "detecciones":            detections,
     }
+    _job_results[job_id] = result
+    return result
 
 
 def run_compare_pipeline(
     job_id:    str,
     file_path: str,
     models:    List[str],
-    conf:      float = 0.25,
+    conf:      float = 0.30,
     iou:       float = 0.45,
+    nms_iou:   float = 0.40,
+    centroid_dist_px: int = 40,
     tile_size: int   = 1024,
     overlap:   int   = 128,
 ) -> dict:
@@ -144,7 +164,7 @@ def run_compare_pipeline(
             conf      = conf,
             iou       = iou,
         )
-        detections     = nms_global(detections_raw, iou_threshold=iou)
+        detections     = nms_global(detections_raw, iou_threshold=nms_iou, centroid_dist_px=centroid_dist_px)
         tiles_with_dets = len({d["tile_filename"] for d in detections})
         tiles_per_sec   = round(len(tiles_meta) / elapsed, 2) if elapsed > 0 else 0.0
 

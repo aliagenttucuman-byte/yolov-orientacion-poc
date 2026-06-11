@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ModelInfo, ProcessRequest } from '../types'
+import { ProcessRequest } from '../types'
 
 interface Props {
   jobId: string | null
@@ -8,64 +8,31 @@ interface Props {
   processing: boolean
 }
 
-const MODELS: ModelInfo[] = [
-  {
-    key: 'yolov8n',
-    label: 'YOLOv8n',
-    description: 'Nano — alta velocidad, ideal para exploración rápida',
-    speed: '~0.8s/tile',
-  },
-  {
-    key: 'yolov9c',
-    label: 'YOLOv9c',
-    description: 'Compact — mejor precisión, velocidad moderada',
-    speed: '~1.4s/tile',
-  },
-  {
-    key: 'yolo11n',
-    label: 'YOLO11n',
-    description: 'Nano v11 — arquitectura actualizada, eficiente',
-    speed: '~0.9s/tile',
-  },
+const MODELS = [
+  { key: 'yolo11n_forestai', label: 'YOLO11n ForestAI (fine-tuned)' },
+  { key: 'yolo11n',          label: 'YOLO11n base' },
+  { key: 'yolov8n',          label: 'YOLOv8n base' },
+  { key: 'exg',              label: 'ExG — Excess Green (sin ML)' },
 ]
 
-function ModelCard({
-  model,
-  selected,
-  onSelect,
-}: {
-  model: ModelInfo
-  selected: boolean
-  onSelect: () => void
-}) {
-  return (
-    <button
-      onClick={onSelect}
-      className={[
-        'flex flex-col gap-1 rounded-xl border-2 p-4 text-left transition-all cursor-pointer w-full',
-        selected
-          ? 'border-blue-500 bg-blue-950/50 shadow-lg shadow-blue-900/20'
-          : 'border-slate-700 bg-slate-800/50 hover:border-slate-500',
-      ].join(' ')}
-    >
-      <div className="flex items-center justify-between">
-        <span className={`font-bold text-sm ${selected ? 'text-blue-300' : 'text-slate-200'}`}>
-          {model.label}
-        </span>
-        {selected && (
-          <span className="text-xs bg-blue-600 text-white px-2 py-0.5 rounded-full">
-            ✓ Seleccionado
-          </span>
-        )}
-      </div>
-      <span className="text-xs text-slate-400 leading-snug">{model.description}</span>
-      <span className="text-xs text-slate-500 mt-1">⚡ {model.speed}</span>
-    </button>
-  )
+// Defaults calibrados para demo ReforestLatam (9 de Julio, 2026-06-11)
+// tile=1024px → captura copas grandes que a 640px se pierden
+// conf=0.55 → ~300 árboles en zona urbana/periurbana — número creíble
+// centroid=60px → fusiona detecciones duplicadas de la misma copa
+const DEFAULT_NMS_IOU      = 0.40
+const DEFAULT_IOU          = 0.45
+const DEFAULT_OVERLAP      = 0.20
+
+const MODEL_DEFAULTS: Record<string, { centroid: number; conf: number; tile_size: number }> = {
+  yolo11n_forestai: { centroid: 90,  conf: 0.65, tile_size: 640  },
+  yolo11n:          { centroid: 60,  conf: 0.25, tile_size: 640  },
+  yolov8n:          { centroid: 60,  conf: 0.25, tile_size: 640  },
+  exg:              { centroid: 90,  conf: 0.50, tile_size: 1024 },
 }
 
 function ParamSlider({
   label,
+  hint,
   value,
   min,
   max,
@@ -73,6 +40,7 @@ function ParamSlider({
   onChange,
 }: {
   label: string
+  hint?: string
   value: number
   min: number
   max: number
@@ -94,34 +62,39 @@ function ParamSlider({
         onChange={(e) => onChange(parseFloat(e.target.value))}
         className="w-full h-1.5 rounded-full appearance-none bg-slate-700 cursor-pointer"
       />
-      <div className="flex justify-between text-[10px] text-slate-600">
-        <span>{min}</span>
-        <span>{max}</span>
-      </div>
+      {hint && (
+        <p className="text-[10px] text-slate-600 italic">{hint}</p>
+      )}
     </div>
   )
 }
 
-export default function ModelSelector({ jobId, onProcess, onProcessCompare, processing }: Props) {
-  const [modelA, setModelA] = useState('yolov8n')
-  const [modelB, setModelB] = useState('yolov9c')
-  const [conf, setConf] = useState(0.25)
-  const [iou, setIou] = useState(0.45)
-  const [tileSize, setTileSize] = useState(640)
-  const [overlap, setOverlap] = useState(0.2)
-  const [compareMode, setCompareMode] = useState(false)
+export default function ModelSelector({ jobId, onProcess, processing }: Props) {
+  const [conf, setConf]           = useState(MODEL_DEFAULTS[MODELS[0].key].conf)
+  const [nmsIou, setNmsIou]       = useState(DEFAULT_NMS_IOU)
+  const [centroid, setCentroid]   = useState(MODEL_DEFAULTS[MODELS[0].key].centroid)
+  const [tileSize, setTileSize]   = useState(MODEL_DEFAULTS[MODELS[0].key].tile_size)
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [modelKey, setModelKey]   = useState(MODELS[0].key)
 
-  function buildReq(modelKey: string): ProcessRequest {
-    return { job_id: jobId!, model_key: modelKey, conf, iou, tile_size: tileSize, overlap }
+  function handleModelChange(key: string) {
+    setModelKey(key)
+    const d = MODEL_DEFAULTS[key]
+    if (d) { setConf(d.conf); setCentroid(d.centroid); setTileSize(d.tile_size) }
   }
 
   function handleProcess() {
     if (!jobId) return
-    if (compareMode) {
-      onProcessCompare(buildReq(modelA), buildReq(modelB))
-    } else {
-      onProcess(buildReq(modelA))
-    }
+    onProcess({
+      job_id:           jobId,
+      model_key:        modelKey,
+      conf,
+      iou:              DEFAULT_IOU,
+      nms_iou:          nmsIou,
+      centroid_dist_px: centroid,
+      tile_size:        tileSize,
+      overlap:          Math.round(DEFAULT_OVERLAP * tileSize),
+    })
   }
 
   const canProcess = !!jobId && !processing
@@ -129,118 +102,91 @@ export default function ModelSelector({ jobId, onProcess, onProcessCompare, proc
   return (
     <div className="w-full max-w-2xl mx-auto flex flex-col gap-6">
 
-      {/* Compare toggle */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold text-slate-200">Configuración del modelo</h2>
-        <label className="flex items-center gap-2 cursor-pointer select-none">
-          <span className="text-xs text-slate-400">Modo comparativa</span>
-          <div
-            onClick={() => setCompareMode((v) => !v)}
-            className={[
-              'relative w-10 h-5 rounded-full transition-colors',
-              compareMode ? 'bg-blue-600' : 'bg-slate-700',
-            ].join(' ')}
-          >
-            <div
-              className={[
-                'absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform',
-                compareMode ? 'translate-x-5' : 'translate-x-0.5',
-              ].join(' ')}
-            />
-          </div>
-        </label>
+      {/* Selector de modelo */}
+      <div
+        className="flex flex-col gap-2 rounded-xl border px-4 py-3"
+        style={{ backgroundColor: '#1e293b', borderColor: '#22c55e44' }}
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-xl">🌲</span>
+          <span className="text-sm font-bold text-green-400">Detector</span>
+        </div>
+        <select
+          value={modelKey}
+          onChange={(e) => handleModelChange(e.target.value)}
+          className="w-full rounded-lg px-3 py-2 text-sm font-mono text-slate-200"
+          style={{ backgroundColor: '#0f172a', border: '1px solid #334155' }}
+        >
+          {MODELS.map(m => (
+            <option key={m.key} value={m.key}>{m.label}</option>
+          ))}
+        </select>
+        {modelKey === 'exg' && (
+          <p className="text-[10px] text-slate-500 italic">
+            No usa ML — detecta vegetación por índice ExG (Excess Green). Muy rápido, sin falsos positivos de vehículos.
+          </p>
+        )}
       </div>
 
-      {/* Model selection */}
-      {!compareMode ? (
-        <div>
-          <p className="text-xs text-slate-500 mb-2 uppercase tracking-wider">Modelo</p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {MODELS.map((m) => (
-              <ModelCard
-                key={m.key}
-                model={m}
-                selected={modelA === m.key}
-                onSelect={() => setModelA(m.key)}
-              />
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <p className="text-xs text-slate-500 mb-2 uppercase tracking-wider">Modelo A</p>
-            <div className="flex flex-col gap-2">
-              {MODELS.map((m) => (
-                <ModelCard
-                  key={m.key}
-                  model={m}
-                  selected={modelA === m.key}
-                  onSelect={() => setModelA(m.key)}
-                />
-              ))}
-            </div>
-          </div>
-          <div>
-            <p className="text-xs text-slate-500 mb-2 uppercase tracking-wider">Modelo B</p>
-            <div className="flex flex-col gap-2">
-              {MODELS.map((m) => (
-                <ModelCard
-                  key={m.key}
-                  model={m}
-                  selected={modelB === m.key}
-                  onSelect={() => setModelB(m.key)}
-                />
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Parámetro principal */}
+      <div
+        className="border rounded-xl p-4 flex flex-col gap-4"
+        style={{ backgroundColor: '#1e293b44', borderColor: '#334155' }}
+      >
+        <p className="text-xs text-slate-500 uppercase tracking-wider">Sensibilidad de detección</p>
 
-      {/* Parameters */}
-      <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 flex flex-col gap-4">
-        <p className="text-xs text-slate-500 uppercase tracking-wider">Parámetros de detección</p>
         <ParamSlider
-          label="Confianza mínima (conf)"
+          label="Confianza mínima"
+          hint="Más alto = menos árboles pero más precisos. Demo calibrada en 0.65"
           value={conf}
-          min={0.1}
-          max={0.9}
-          step={0.01}
+          min={0.45}
+          max={0.85}
+          step={0.05}
           onChange={setConf}
         />
-        <ParamSlider
-          label="IoU threshold"
-          value={iou}
-          min={0.1}
-          max={0.9}
-          step={0.01}
-          onChange={setIou}
-        />
-        <div className="grid grid-cols-2 gap-4">
-          <div className="flex flex-col gap-1">
-            <span className="text-xs text-slate-400">Tile size (px)</span>
-            <select
-              value={tileSize}
-              onChange={(e) => setTileSize(Number(e.target.value))}
-              className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200"
-            >
-              {[320, 640, 1024, 1280].map((v) => (
-                <option key={v} value={v}>{v}</option>
-              ))}
-            </select>
+
+        {/* Toggle avanzado */}
+        <button
+          className="text-[11px] text-slate-500 hover:text-slate-300 text-left transition-colors"
+          onClick={() => setShowAdvanced(v => !v)}
+        >
+          {showAdvanced ? '▾ Ocultar parámetros avanzados' : '▸ Parámetros avanzados (fusión de copas)'}
+        </button>
+
+        {showAdvanced && (
+          <div className="flex flex-col gap-4 border-t pt-3" style={{ borderColor: '#334155' }}>
+            <ParamSlider
+              label="NMS global entre tiles"
+              hint="Elimina detecciones duplicadas en bordes de tiles. Default 0.40"
+              value={nmsIou}
+              min={0.10}
+              max={0.80}
+              step={0.05}
+              onChange={setNmsIou}
+            />
+            <div className="flex flex-col gap-1">
+              <div className="flex justify-between text-xs text-slate-400">
+                <span>Fusión de copa (centroide)</span>
+                <span className="font-mono text-slate-200">{centroid}px</span>
+              </div>
+              <input
+                type="range"
+                min={20}
+                max={120}
+                step={10}
+                value={centroid}
+                onChange={(e) => setCentroid(parseInt(e.target.value))}
+                className="w-full h-1.5 rounded-full appearance-none bg-slate-700 cursor-pointer"
+              />
+              <p className="text-[10px] text-slate-600 italic">
+                Fusiona detecciones de la misma copa a menos de {centroid}px (~{(centroid * 0.06).toFixed(1)}m). Subir para copas grandes (quebrachos adultos).
+              </p>
+            </div>
           </div>
-          <ParamSlider
-            label="Overlap"
-            value={overlap}
-            min={0.0}
-            max={0.5}
-            step={0.05}
-            onChange={setOverlap}
-          />
-        </div>
+        )}
       </div>
 
-      {/* Process button */}
+      {/* Botón */}
       <button
         onClick={handleProcess}
         disabled={!canProcess}
@@ -251,11 +197,7 @@ export default function ModelSelector({ jobId, onProcess, onProcessCompare, proc
             : 'bg-slate-700 text-slate-500 cursor-not-allowed',
         ].join(' ')}
       >
-        {processing
-          ? '⏳ Procesando...'
-          : compareMode
-          ? `🔬 Comparar ${modelA} vs ${modelB}`
-          : `🚀 Procesar con ${MODELS.find((m) => m.key === modelA)?.label}`}
+        {processing ? '⏳ Procesando...' : '🚀 Detectar Árboles'}
       </button>
 
       {!jobId && (

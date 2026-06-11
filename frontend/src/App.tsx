@@ -11,6 +11,7 @@ import {
   ProcessResponse,
   AppState,
 } from './types'
+import SpeciesPanel from './components/SpeciesPanel'
 
 export default function App() {
   const [appState, setAppState] = useState<AppState>('idle')
@@ -176,6 +177,7 @@ export default function App() {
           <section className="flex flex-col gap-6">
             <SectionLabel step={3} text="Resultados" />
             <ResultsPanel result={result} />
+            <SpeciesPanel jobId={result.job_id} />
             <TileViewer result={result} />
           </section>
         )}

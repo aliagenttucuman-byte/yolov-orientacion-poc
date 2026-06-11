@@ -20,7 +20,6 @@ function groupByTile(detecciones: DetectionItem[]): TileGroup[] {
   }
   return Array.from(map.entries())
     .map(([filename, detections]) => ({ filename, detections }))
-    .slice(0, 12)
 }
 
 interface TileCanvasProps {
@@ -189,11 +188,16 @@ function TileModal({ jobId, tile, onClose }: ModalProps) {
 
 // ─── Main TileViewer ──────────────────────────────────────────────────────────
 
+const PAGE_SIZE = 24
+
 export default function TileViewer({ result }: Props) {
   const [modalTile, setModalTile] = useState<TileGroup | null>(null)
-  const tiles = groupByTile(result.detecciones)
+  const [page, setPage] = useState(0)
+  const allTiles = groupByTile(result.detecciones)
+  const totalPages = Math.ceil(allTiles.length / PAGE_SIZE)
+  const tiles = allTiles.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
-  if (tiles.length === 0) {
+  if (allTiles.length === 0) {
     return (
       <div className="text-center py-12 text-slate-600 text-sm">
         No hay tiles con detecciones para mostrar
@@ -208,7 +212,7 @@ export default function TileViewer({ result }: Props) {
           Tiles con detecciones
         </h2>
         <span className="text-xs text-slate-500">
-          Mostrando {tiles.length} de {result.tiles_with_detections}
+          Mostrando {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, allTiles.length)} de {allTiles.length}
         </span>
       </div>
 
@@ -222,6 +226,29 @@ export default function TileViewer({ result }: Props) {
           />
         ))}
       </div>
+
+      {/* Paginación */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 pt-2">
+          <button
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            disabled={page === 0}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 disabled:opacity-30 hover:bg-slate-700 transition-colors"
+          >
+            ← Anterior
+          </button>
+          <span className="text-xs text-slate-500">
+            Página {page + 1} de {totalPages}
+          </span>
+          <button
+            onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+            disabled={page === totalPages - 1}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 disabled:opacity-30 hover:bg-slate-700 transition-colors"
+          >
+            Siguiente →
+          </button>
+        </div>
+      )}
 
       {modalTile && (
         <TileModal

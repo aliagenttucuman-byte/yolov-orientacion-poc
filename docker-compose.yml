@@ -7,8 +7,10 @@ services:
       - "8020:8020"
     volumes:
       - /tmp/yolov-uploads:/tmp/yolov-uploads
+      - ./models:/app/models:ro
     environment:
       - PYTHONUNBUFFERED=1
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     restart: unless-stopped
 
   frontend:

@@ -10,6 +10,8 @@ export interface ProcessRequest {
   model_key: string
   conf: number
   iou: number
+  nms_iou: number
+  centroid_dist_px: number
   tile_size: number
   overlap: number
 }

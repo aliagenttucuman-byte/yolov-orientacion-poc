@@ -1,18 +1,25 @@
 """
 POST /api/v1/process   — Ejecuta el pipeline YOLO sobre un job ya subido.
 POST /api/v1/compare   — Compara varios modelos sobre el mismo job.
+POST /api/v1/classify  — Clasifica especies + salud con LLM Vision + CLIP clustering.
 GET  /api/v1/health    — Estado del servicio y modelos disponibles.
 GET  /api/v1/tiles/{job_id}/{tile_filename} — Sirve tiles generados.
 """
 from __future__ import annotations
 
 import os
+import time
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
 from app.models.schemas import (
+    ClassifiedDetection,
+    ClassifyRequest,
+    ClassifyResponse,
     CompareRequest,
     CompareResponse,
     HealthResponse,
@@ -20,6 +27,7 @@ from app.models.schemas import (
     ProcessRequest,
     ProcessResponse,
     DetectionItem,
+    SpeciesSummary,
 )
 from app.services.yolo_service import (
     UPLOAD_DIR,
@@ -79,6 +87,8 @@ def process(req: ProcessRequest) -> ProcessResponse:
             model_key = req.model_key,
             conf      = req.conf,
             iou       = req.iou,
+            nms_iou   = req.nms_iou,
+            centroid_dist_px = req.centroid_dist_px,
             tile_size = req.tile_size,
             overlap   = req.overlap,
         )
@@ -120,6 +130,8 @@ def compare(req: CompareRequest) -> CompareResponse:
             models    = valid_requested,
             conf      = req.conf,
             iou       = req.iou,
+            nms_iou   = req.nms_iou,
+            centroid_dist_px = req.centroid_dist_px,
             tile_size = req.tile_size,
             overlap   = req.overlap,
         )
@@ -170,3 +182,113 @@ def serve_tile(job_id: str, tile_filename: str) -> FileResponse:
         )
 
     return FileResponse(str(tile_path), media_type="image/jpeg")
+
+
+@router.post("/classify", response_model=ClassifyResponse, summary="Clasificar especies + salud")
+def classify(req: ClassifyRequest) -> ClassifyResponse:
+    """
+    Clasifica especies y salud de los árboles detectados usando:
+    1. LLM Vision (gpt-4o-mini) sobre tiles sampleados
+    2. CLIP embeddings + clustering HDBSCAN
+    3. Asignación de especie por cluster
+
+    Requiere que el job haya sido procesado con /process primero (tiles en disco).
+    """
+    tiles_dir = get_tiles_dir(req.job_id)
+    if not tiles_dir.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"No se encontraron tiles para job_id='{req.job_id}'. Ejecutá /process primero."
+        )
+
+    # Reconstruir detecciones desde los tiles en disco
+    tile_files = list(tiles_dir.glob("*.jpg"))
+    if not tile_files:
+        raise HTTPException(status_code=404, detail="No hay tiles generados para este job.")
+
+    # Cargar detecciones del job desde el estado en memoria del yolo_service
+    from app.services.yolo_service import _job_results
+    job_data = _job_results.get(req.job_id)
+    if not job_data or not job_data.get("detecciones"):
+        raise HTTPException(
+            status_code=404,
+            detail=f"No hay detecciones en memoria para job_id='{req.job_id}'. Ejecutá /process primero."
+        )
+
+    detecciones_raw = job_data["detecciones"]
+
+    # Importar y correr el clasificador en thread pool (asyncio dentro)
+    try:
+        import sys
+        from pathlib import Path as P
+        pipeline_root = P("/app") if P("/app/pipeline").is_dir() else P(__file__).resolve().parent.parent.parent.parent
+        if str(pipeline_root) not in sys.path:
+            sys.path.insert(0, str(pipeline_root))
+        from pipeline.species_classifier import classify_species_sync
+    except ImportError as e:
+        raise HTTPException(status_code=500, detail=f"species_classifier no disponible: {e}")
+
+    t0 = time.time()
+    try:
+        enriched = classify_species_sync(
+            tiles_dir=tiles_dir,
+            detecciones=detecciones_raw,
+            sample_tiles=req.sample_tiles,
+            max_crops_per_tile=req.max_crops_per_tile,
+            concurrency=req.concurrency,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    elapsed = round(time.time() - t0, 2)
+
+    # Construir summary por especie
+    species_map: dict = defaultdict(lambda: {
+        "count": 0, "conf_sum": 0.0,
+        "saludable": 0, "estresado": 0, "enfermo": 0
+    })
+    classified_count = 0
+    for d in enriched:
+        sp = d.get("species", "No clasificado")
+        if sp not in ("No clasificado", "Desconocida"):
+            classified_count += 1
+        species_map[sp]["count"] += 1
+        species_map[sp]["conf_sum"] += d.get("species_confidence", 0.0)
+        h = d.get("health", "desconocido")
+        if h == "saludable":
+            species_map[sp]["saludable"] += 1
+        elif h == "estresado":
+            species_map[sp]["estresado"] += 1
+        elif h == "enfermo":
+            species_map[sp]["enfermo"] += 1
+
+    total = len(enriched)
+    summary = [
+        SpeciesSummary(
+            species=sp,
+            count=v["count"],
+            pct=round(v["count"] / total * 100, 1) if total else 0,
+            avg_confidence=round(v["conf_sum"] / v["count"], 2) if v["count"] else 0,
+            health_saludable=v["saludable"],
+            health_estresado=v["estresado"],
+            health_enfermo=v["enfermo"],
+        )
+        for sp, v in sorted(species_map.items(), key=lambda x: -x[1]["count"])
+    ]
+
+    n_clusters = len(set(d.get("cluster_id", -1) for d in enriched)) - (
+        1 if any(d.get("cluster_id") == -1 for d in enriched) else 0
+    )
+
+    det_list = [ClassifiedDetection(**d) for d in enriched]
+
+    return ClassifyResponse(
+        job_id=req.job_id,
+        total_trees=total,
+        classified_trees=classified_count,
+        n_clusters=n_clusters,
+        tiles_sampled=req.sample_tiles,
+        elapsed_sec=elapsed,
+        species_summary=summary,
+        detecciones=det_list,
+    )
+
