@@ -10,7 +10,7 @@ services:
       - ./models:/app/models:ro
     environment:
       - PYTHONUNBUFFERED=1
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_API_KEY=sk-pro...cQEA
     restart: unless-stopped
 
   frontend:

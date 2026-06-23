@@ -28,6 +28,10 @@ from app.models.schemas import (
     ProcessResponse,
     DetectionItem,
     SpeciesSummary,
+    SpeciesProdRequest,
+    SpeciesProdDetection,
+    SpeciesProdSummary,
+    SpeciesProdResponse,
 )
 from app.services.yolo_service import (
     UPLOAD_DIR,
@@ -182,6 +186,86 @@ def serve_tile(job_id: str, tile_filename: str) -> FileResponse:
         )
 
     return FileResponse(str(tile_path), media_type="image/jpeg")
+
+
+@router.post("/classify-species", response_model=SpeciesProdResponse, summary="Clasificar especies (YOLO + fallback VLM)")
+def classify_species_prod(req: SpeciesProdRequest) -> SpeciesProdResponse:
+    """
+    Clasifica la especie de cada copa ya detectada usando:
+    1. yolo26n_especies (fine-tuned NOA, rápido, sin costo)
+    2. Si conf < conf_fallback → gpt-4o-mini refina (fallback)
+
+    Requiere que el job haya sido procesado con /process primero.
+    """
+    from app.services.yolo_service import _job_results
+    job_data = _job_results.get(req.job_id)
+    if not job_data or not job_data.get("detecciones"):
+        raise HTTPException(
+            status_code=404,
+            detail=f"No hay detecciones en memoria para job_id='{req.job_id}'. Ejecutá /process primero."
+        )
+
+    tiles_dir = str(get_tiles_dir(req.job_id))
+
+    import sys
+    from pathlib import Path as P
+    pipeline_root = P("/app") if P("/app/pipeline").is_dir() else P(__file__).resolve().parent.parent.parent.parent
+    if str(pipeline_root) not in sys.path:
+        sys.path.insert(0, str(pipeline_root))
+
+    try:
+        from pipeline.species_classifier_prod import classify_detections
+    except ImportError as e:
+        raise HTTPException(status_code=500, detail=f"species_classifier_prod no disponible: {e}")
+
+    import copy, time
+    detecciones = copy.deepcopy(job_data["detecciones"])
+
+    t0 = time.time()
+    try:
+        enriched = classify_detections(
+            detections=detecciones,
+            tiles_dir=tiles_dir,
+            conf_threshold=req.conf_fallback,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    elapsed = round(time.time() - t0, 2)
+
+    # Resumen por especie
+    from collections import defaultdict
+    sp_map: dict = defaultdict(lambda: {"count": 0, "conf_sum": 0.0, "via_yolo": 0, "via_vlm": 0})
+    for d in enriched:
+        sp = d.get("especie", "Otro")
+        sp_map[sp]["count"] += 1
+        sp_map[sp]["conf_sum"] += d.get("conf_especie", 0.0)
+        if d.get("via") == "vlm_fallback":
+            sp_map[sp]["via_vlm"] += 1
+        else:
+            sp_map[sp]["via_yolo"] += 1
+
+    total = len(enriched)
+    resumen = [
+        SpeciesProdSummary(
+            especie=sp,
+            count=v["count"],
+            pct=round(v["count"] / total * 100, 1) if total else 0,
+            avg_conf=round(v["conf_sum"] / v["count"], 3) if v["count"] else 0,
+            via_yolo=v["via_yolo"],
+            via_vlm=v["via_vlm"],
+        )
+        for sp, v in sorted(sp_map.items(), key=lambda x: -x[1]["count"])
+    ]
+
+    det_list = [SpeciesProdDetection(**d) for d in enriched]
+
+    return SpeciesProdResponse(
+        job_id=req.job_id,
+        total_trees=total,
+        elapsed_sec=elapsed,
+        resumen=resumen,
+        detecciones=det_list,
+    )
 
 
 @router.post("/classify", response_model=ClassifyResponse, summary="Clasificar especies + salud")

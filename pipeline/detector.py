@@ -15,6 +15,8 @@ SUPPORTED_MODELS = {
     "yolo11n":         "yolo11n.pt",
     "yolo11s":         "yolo11s.pt",
     "yolo11n_forestai": "/app/models/yolo11n_forestai_v2.pt",   # fine-tuned ortofotos NOA
+    "yolo26n":         "yolo26n.pt",   # v8.4.0 — nuevo modelo base Ultralytics
+    "yolo26n_especies": "/app/models/yolo26n_especies_noa_v1.pt",  # fine-tuned NOA: Tipa blanca, Lapacho rosado
 }
 
 

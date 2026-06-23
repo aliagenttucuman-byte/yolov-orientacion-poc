@@ -128,6 +128,38 @@ class ClassifyResponse(BaseModel):
     detecciones: List[ClassifiedDetection]
 
 
+# ── Classify Species Prod (YOLO fine-tuned + VLM fallback) ───────────────────
+
+class SpeciesProdRequest(BaseModel):
+    job_id: str
+    conf_fallback: float = Field(default=0.50, ge=0.0, le=1.0,
+        description="Umbral de confianza: por debajo activa el fallback VLM")
+
+class SpeciesProdDetection(BaseModel):
+    tile_filename: str
+    x1: int; y1: int; x2: int; y2: int
+    global_x1: int; global_y1: int; global_x2: int; global_y2: int
+    confidence: float
+    especie: str
+    conf_especie: float
+    via: str   # "yolo" | "vlm_fallback" | "error"
+
+class SpeciesProdSummary(BaseModel):
+    especie: str
+    count: int
+    pct: float
+    avg_conf: float
+    via_yolo: int
+    via_vlm: int
+
+class SpeciesProdResponse(BaseModel):
+    job_id: str
+    total_trees: int
+    elapsed_sec: float
+    resumen: List[SpeciesProdSummary]
+    detecciones: List[SpeciesProdDetection]
+
+
 # ── Health ───────────────────────────────────────────────────────────────────
 
 class HealthResponse(BaseModel):

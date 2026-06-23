@@ -59,6 +59,19 @@ def generate_tiles(
                 if rgb.shape[2] == 1:
                     rgb = np.repeat(rgb, 3, axis=2)
 
+                # Stretch de contraste per-canal: mapea p2-p98 a 0-255
+                # Necesario para TIFs subexpuestos (mean ~60 → imagen oscura para VLM)
+                rgb_stretched = np.zeros_like(rgb)
+                for ch in range(3):
+                    p2, p98 = np.percentile(rgb[:, :, ch], (2, 98))
+                    if p98 > p2:
+                        rgb_stretched[:, :, ch] = np.clip(
+                            (rgb[:, :, ch].astype(np.float32) - p2) / (p98 - p2) * 255, 0, 255
+                        ).astype(np.uint8)
+                    else:
+                        rgb_stretched[:, :, ch] = rgb[:, :, ch]
+                rgb = rgb_stretched
+
                 if veg_filter and not tile_has_vegetation(rgb):
                     continue
 
