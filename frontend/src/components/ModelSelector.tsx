@@ -10,6 +10,8 @@ interface Props {
 
 const MODELS = [
   { key: 'yolo11n_forestai', label: 'YOLO11n ForestAI (fine-tuned)' },
+  { key: 'yolo26n',          label: 'YOLO26n base (v8.4.0 — nuevo)' },
+  { key: 'yolo26n_especies', label: 'YOLO26n Especies NOA (Tipa/Lapacho)' },
   { key: 'yolo11n',          label: 'YOLO11n base' },
   { key: 'yolov8n',          label: 'YOLOv8n base' },
   { key: 'exg',              label: 'ExG — Excess Green (sin ML)' },
@@ -25,6 +27,8 @@ const DEFAULT_OVERLAP      = 0.20
 
 const MODEL_DEFAULTS: Record<string, { centroid: number; conf: number; tile_size: number }> = {
   yolo11n_forestai: { centroid: 90,  conf: 0.65, tile_size: 640  },
+  yolo26n:          { centroid: 60,  conf: 0.15, tile_size: 640  },
+  yolo26n_especies: { centroid: 60,  conf: 0.25, tile_size: 640  },
   yolo11n:          { centroid: 60,  conf: 0.25, tile_size: 640  },
   yolov8n:          { centroid: 60,  conf: 0.25, tile_size: 640  },
   exg:              { centroid: 90,  conf: 0.50, tile_size: 1024 },

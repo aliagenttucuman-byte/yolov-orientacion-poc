@@ -17,3 +17,12 @@ runs/
 # OS
 .DS_Store
 *.log
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+node_modules/
+
+# Hermes / agents
+.hermes.md
+.claude/
