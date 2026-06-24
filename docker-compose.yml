@@ -10,7 +10,9 @@ services:
       - ./models:/app/models:ro
     environment:
       - PYTHONUNBUFFERED=1
-      - OPENAI_API_KEY=sk-pro...cQEA
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - NVIDIA_API_KEY=${NVIDIA_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
     restart: unless-stopped
 
   frontend:

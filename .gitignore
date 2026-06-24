@@ -26,3 +26,6 @@ node_modules/
 # Hermes / agents
 .hermes.md
 .claude/
+
+.env
+.env.local
