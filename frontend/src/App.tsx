@@ -4,6 +4,7 @@ import ModelSelector from './components/ModelSelector'
 import ResultsPanel from './components/ResultsPanel'
 import TileViewer from './components/TileViewer'
 import ComparePanel from './components/ComparePanel'
+import HistoricoPanel from './components/HistoricoPanel'
 import { processJob, compareModels } from './api/client'
 import {
   UploadResponse,
@@ -13,8 +14,11 @@ import {
 } from './types'
 import SpeciesPanel from './components/SpeciesPanel'
 
+type ViewMode = 'detection' | 'historico'
+
 export default function App() {
   const [appState, setAppState] = useState<AppState>('idle')
+  const [viewMode, setViewMode] = useState<ViewMode>('detection')
   const [upload, setUpload] = useState<UploadResponse | null>(null)
   const [result, setResult] = useState<ProcessResponse | null>(null)
   const [compareResults, setCompareResults] = useState<
@@ -149,7 +153,57 @@ export default function App() {
               </div>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            {/* MODE TOGGLE */}
+            <div
+              style={{
+                display: 'flex',
+                background: 'rgba(15, 23, 42, 0.6)',
+                border: '1px solid #334155',
+                borderRadius: 10,
+                padding: 3,
+                gap: 2,
+              }}
+            >
+              <button
+                onClick={() => setViewMode('detection')}
+                style={{
+                  fontSize: 12,
+                  padding: '0.45rem 0.875rem',
+                  borderRadius: 7,
+                  background:
+                    viewMode === 'detection'
+                      ? 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)'
+                      : 'transparent',
+                  border: 'none',
+                  color: viewMode === 'detection' ? '#fff' : '#94a3b8',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  transition: 'all 0.2s',
+                }}
+              >
+                🌲 Detección
+              </button>
+              <button
+                onClick={() => setViewMode('historico')}
+                style={{
+                  fontSize: 12,
+                  padding: '0.45rem 0.875rem',
+                  borderRadius: 7,
+                  background:
+                    viewMode === 'historico'
+                      ? 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)'
+                      : 'transparent',
+                  border: 'none',
+                  color: viewMode === 'historico' ? '#fff' : '#94a3b8',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  transition: 'all 0.2s',
+                }}
+              >
+                🛰️ Histórico IA
+              </button>
+            </div>
             <div
               style={{
                 display: 'flex',
@@ -168,9 +222,9 @@ export default function App() {
                   boxShadow: '0 0 12px #22c55e',
                 }}
               />
-              Modelo activo
+              Online
             </div>
-            {appState !== 'idle' && (
+            {appState !== 'idle' && viewMode === 'detection' && (
               <button
                 onClick={reset}
                 style={{
@@ -191,6 +245,12 @@ export default function App() {
         </div>
       </header>
 
+      {/* MODO HISTÓRICO */}
+      {viewMode === 'historico' && <HistoricoPanel />}
+
+      {/* MODO DETECCIÓN */}
+      {viewMode === 'detection' && (
+        <>
       {/* HERO — visible solo en idle */}
       {showHero && (
         <section
@@ -453,6 +513,8 @@ export default function App() {
           </section>
         )}
       </main>
+        </>
+      )}
 
       {/* FOOTER */}
       <footer

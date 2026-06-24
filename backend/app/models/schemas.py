@@ -178,3 +178,48 @@ class JobResult(BaseModel):
     compare_response: Optional[CompareResponse] = None
     status: str = "uploaded"   # uploaded | processing | done | error
     error: Optional[str] = None
+
+
+# ── Histórico Satelital ─────────────────────────────────────────────────────
+
+class HistoricoBBox(BaseModel):
+    """Bounding box geográfico (WGS84)"""
+    lat_min: float = Field(..., ge=-90, le=90)
+    lat_max: float = Field(..., ge=-90, le=90)
+    lon_min: float = Field(..., ge=-180, le=180)
+    lon_max: float = Field(..., ge=-180, le=180)
+    nombre_zona: Optional[str] = None
+
+
+class YearlyLoss(BaseModel):
+    year: int
+    loss_ha: float
+
+
+class HistoricoResponse(BaseModel):
+    """Métricas históricas de cobertura forestal"""
+    bbox: HistoricoBBox
+    area_total_ha: float
+    cobertura_2000_ha: float
+    cobertura_2000_pct: float
+    perdida_total_ha: float
+    perdida_total_pct: float
+    perdida_por_year: List[YearlyLoss]
+    year_pico_perdida: int
+    perdida_year_pico_ha: float
+    tasa_anual_promedio_ha: float
+    timelapse_url: str
+    timelapse_embed_url: str
+    fuente: str = "Hansen Global Forest Change v1.11 (2001-2023) + Google Earth Timelapse"
+
+
+class ChatHistoricoRequest(BaseModel):
+    """Chat sobre un análisis histórico ya generado"""
+    pregunta: str
+    contexto: HistoricoResponse
+    historial: Optional[List[dict]] = None
+
+
+class ChatHistoricoResponse(BaseModel):
+    respuesta: str
+    modelo: str = "llama-3.3-70b-versatile"

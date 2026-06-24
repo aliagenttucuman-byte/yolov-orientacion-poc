@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1 import process, results, upload
+from app.api.v1 import historico, process, results, upload
 
 # ── Crear directorios necesarios ─────────────────────────────────────────────
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "/tmp/yolov-uploads"))
@@ -46,9 +46,10 @@ app.add_middleware(
 # ── Routers ───────────────────────────────────────────────────────────────────
 API_PREFIX = "/api/v1"
 
-app.include_router(upload.router,  prefix=API_PREFIX, tags=["Upload"])
-app.include_router(process.router, prefix=API_PREFIX, tags=["Pipeline"])
-app.include_router(results.router, prefix=API_PREFIX, tags=["Results"])
+app.include_router(upload.router,    prefix=API_PREFIX, tags=["Upload"])
+app.include_router(process.router,   prefix=API_PREFIX, tags=["Pipeline"])
+app.include_router(results.router,   prefix=API_PREFIX, tags=["Results"])
+app.include_router(historico.router, prefix=API_PREFIX, tags=["Histórico"])
 
 
 # ── Root ──────────────────────────────────────────────────────────────────────
